@@ -1,0 +1,110 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "shivam singh"
+date: "10 June 2019"
+output: html_document
+---
+
+# Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+#### Data
+
+The training data for this project are available here:
+
+[Training data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+
+The test data are available here:
+
+[Test data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)
+
+We will use the training data to learn how to predict the **classe** variable, which is the last column in our training dataset. In total there are 5 different classes.
+
+1. Class A - exactly according to the specification
+2. Class B - throwing the elbows to the front
+3. Class C - lifting the dumbbell only halfway
+4. Class D - lowering the dumbbell only halfway
+5. Class E - throwing the hips to the front
+
+For more information about the dataset, we advice the reader to learn more [here](http://groupware.les.inf.puc-rio.br/har).
+
+To make our work reproducible, we have chosen to set the seed to an arbitrarily chosen number: **3355**, and for cross validation we split our training data into a new training, and a validation set. With size of 80%, and 20% of the original training set size respectively. Cross validation is used to choose the best model. We will train different models on the training set, test them all on the validation set, and the best one will be tested on the test set.
+
+The expected out of sample error will be the percentage of missclassifications on the validation set, since we do not train on that data set, but use it to predict the correct class.
+
+```{r echo=FALSE, cache=TRUE}
+# Load packages, set the seed, and read the data
+library(caret)
+library(e1071)
+library(randomForest)
+set.seed(3355)
+training <- read.csv("pml-training.csv", header = TRUE, na.strings=c("NA","#DIV/0!",""))
+test <- read.csv("pml-testing.csv", header = TRUE, na.strings=c("NA","#DIV/0!",""))
+# Split training data into a new training, and validation set. 80%-20% respectively.
+inTrain <- createDataPartition(y=training$classe, p=0.8, list=FALSE)
+train <- training[inTrain, ]
+val <- training[-inTrain, ]
+```
+
+# Cleaning Data
+
+We start by cleaning the data, before we create models on them. In our case we will remove the first two columns. First one is just a unique ID, and the second one a username. Both columns shouldn't have an effect on the model training, and will only clutter the data, hence the removal of them.
+
+Secondly we use the function **nearZeroVar**. nearZeroVar diagnoses predictors that have one unique value (i.e. are zero variance predictors) or predictors that are have both of the following characteristics: they have very few unique values relative to the number of samples and the ratio of the frequency of the most common value to the frequency of the second most common value is large. We will remove all the variables that have a near zero variance.
+
+Lastly we have a lot of missing data. To compensate this, we use the **preProcess** function of the **caret** package. It imputes the dataset based on K-nearest neighbors, and takes the average value of the neighbors as the new value. We also use the preProcess function to center, and scale all our data.
+
+If we want a valid test environment, we perform both transformations on the validation, and test set. This is done because we assume that all three sets come from the same distribution. In total we have 123 variables, to predict the class.
+
+```{r echo=FALSE, cache=TRUE}
+# remove unused columns
+train[1:2] <- list(NULL)
+nzv <- nearZeroVar(train, saveMetrics=TRUE)
+train <- train[,!nzv$nzv]
+preProcValues <- preProcess(train, method = c("medianImpute", "center", "scale"))
+train <- predict(preProcValues, train)
+val <- val[,colnames(train)]
+val <- predict(preProcValues, val)
+test <- test[,colnames(train[, -124])]
+test <- predict(preProcValues, test)
+```
+
+# Models
+
+We will be testing 2 models.
+
+1. Random Forest
+2. Naive Bayes
+
+We won't do any parameter tuning, although we should mention that this is highly advised.
+
+```{r echo=FALSE, cache=TRUE}
+modRF <- randomForest(classe ~. , data=train, method="rf", ntree=100)
+predRF <- predict(modRF, val, type = "class")
+confusionMatrix(predRF, val$classe)
+```
+
+We have a very high accuracy, only missing a few classes on the validation set.
+
+```{r echo=FALSE, cache=TRUE}
+modNB <- naiveBayes(classe ~. , data=train)
+predNB <- predict(modNB, val)
+confusionMatrix(predNB, val$classe)
+```
+
+Naive Bayes model does much worse than the Random Forest, since we only have 5 classes it almost does as bad as just randomly choosing a class. Therefor is why we will not use it on our test set. 
+
+# Results Test Set
+
+Predictions on the test set:
+
+```{r echo=FALSE, cache=TRUE}
+levels(test$cvtd_timestamp) <- levels(train$cvtd_timestamp)
+predTestRF <- predict(modRF, test)
+predTestRF
+```
+
+# Conclusion
+
+Our random forest model had an accuracy around 99% on the validation set. This is extremely high, and unless we made some mistakes, the classification of the test set will be a success.
